@@ -9,24 +9,54 @@ class SSHConnection:
         self.key_path = key_path
 
     def connect(self):
-        client = paramiko.SSHClient()
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(hostname=self.host,port=self.port,username=self.user,key_filename=self.key_path)
+        print(f"Trying to connect to {self.host}:{self.port}...")
+        try:
+            self.client = paramiko.SSHClient()
+            self.client.load_system_host_keys()
+            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self.client.connect(hostname=self.host,port=self.port,username=self.user,key_filename=self.key_path)
+            print("Connection successfull")
+        except Exception as e:
+            print(f"Failed to connect\nError:{e}")
+            exit
+
+        
+    def execute(self,callback):
+        transport_name = self.client.get_transport()
+        channel = transport_name.open_session()
+        channel.get_pty()
+        channel.exec_command("for i in {0..4};do echo hello $((i+1)) && sleep 1 ;done\n ls -l /root")
+        # channel.exec_command("ls /root")
+    
+
+        
+        data = ''
 
         while True:
-            try:
-                cmd = input(">>> ")
-                if cmd == "exit": break
-                else:
-                    stdin,stdout,stderr = client.exec_command(cmd, get_pty=True)
-                    print(stdout.read().decode())
-                    print(stderr.read().decode())
-            except KeyboardInterrupt:
-                break
+            data = channel.recv(1024).decode()
+
+            callback(data)
+
+            if channel.exit_status_ready():break
+
+        while True:
+            data = channel.recv_stderr(1024).decode()
+            callback(data)
+            if channel.exit_status_ready():break
+
+
+
+    def close(self):
+        self.client.close()
+        
+    
+def output(line):
+    print(line)
+
+            
         
 
-        client.close()
+        
 
 
 conn = SSHConnection(
@@ -37,5 +67,7 @@ conn = SSHConnection(
                     )
 
 conn.connect()
+conn.execute(output)
+conn.close()
 
 
