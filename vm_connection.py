@@ -1,6 +1,6 @@
 import paramiko
 import os
-
+import time
 class SSHConnection:
     def __init__(self,host,port, user, key_path):
         self.host = host
@@ -21,28 +21,44 @@ class SSHConnection:
             exit
 
         
-    def execute(self,callback):
+    def execute(self,log_output_line,timeout):
         transport_name = self.client.get_transport()
         channel = transport_name.open_session()
         channel.get_pty()
-        channel.exec_command("for i in {0..4};do echo hello $((i+1)) && sleep 1 ;done\n ls -l /root")
-        # channel.exec_command("ls /root")
-    
+        channel.exec_command("for i in {0..5};do echo hello $((i+1)) && sleep 0.5 ;done\n ls -l /root")
+        # channel.exec_command("for i in {0..5};do echo hello $((i+1)) && sleep 0.5 ;done")
+        # channel.exec_command("sleep 10")
 
+        last_activity  = time.time()
+
+        while True:
+            while channel.recv_ready():
+                data_stdout = channel.recv(1024).decode()
+                if data_stdout.strip():
+                    log_output_line(data_stdout)
+                    last_activity = time.time()
+                
+
+            while channel.recv_stderr_ready():
+                data_stderr = channel.recv_stderr(1024).decode()
+                if data_stderr.strip():
+                    log_output_line(data_stderr)
+                    last_activity = time.time()
+
+            
+            
+            if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
+                break
+
+            if time.time() - last_activity >= timeout:
+                print("Time exceeded. exiting...")
+                break
+
+            time.sleep(0.1)
         
-        data = ''
+        self.client.close()
+        return channel.recv_exit_status()
 
-        while True:
-            data = channel.recv(1024).decode()
-
-            callback(data)
-
-            if channel.exit_status_ready():break
-
-        while True:
-            data = channel.recv_stderr(1024).decode()
-            callback(data)
-            if channel.exit_status_ready():break
 
 
 
@@ -50,8 +66,10 @@ class SSHConnection:
         self.client.close()
         
     
-def output(line):
-    print(line)
+def log_output_line(line):
+    print(f"[REMOTE] {line.strip()}")
+
+    
 
             
         
@@ -67,7 +85,9 @@ conn = SSHConnection(
                     )
 
 conn.connect()
-conn.execute(output)
+
+exit_code = conn.execute(log_output_line,2)
+print(exit_code)
 conn.close()
 
 
