@@ -25,24 +25,34 @@ class SSHConnection:
         transport_name = self.client.get_transport()
         channel = transport_name.open_session()
         channel.get_pty()
-        channel.exec_command("for i in {0..5};do echo hello $((i+1)) && sleep 0.5 ;done\n ls -l /root")
+        channel.exec_command("for i in {0..3};do echo hello $((i+1)) && sleep 0.5 ;done\n ls -l /root\nfor i in {0..5};do echo hello $((i+1)) && sleep 0.5 ;done")
         # channel.exec_command("for i in {0..5};do echo hello $((i+1)) && sleep 0.5 ;done")
         # channel.exec_command("sleep 10")
 
         last_activity  = time.time()
+        data_stdout = ""
+        data_stderr = ""
 
         while True:
             while channel.recv_ready():
-                data_stdout = channel.recv(1024).decode()
-                if data_stdout.strip():
-                    log_output_line(data_stdout)
+                data_stdout += channel.recv(1024).decode()
+                while "\n" in data_stdout:
+                    line, data_stdout = data_stdout.split("\n",1)
+                    # if line.strip():
+                    #     log_output_line(line)
+                    log_output_line(line)
+
                     last_activity = time.time()
                 
 
             while channel.recv_stderr_ready():
-                data_stderr = channel.recv_stderr(1024).decode()
-                if data_stderr.strip():
-                    log_output_line(data_stderr)
+                data_stderr += channel.recv_stderr(1024).decode()
+                while "\n" in data_stderr:
+                    line, data_stderr = data_stderr.split("\n",1)
+                    # if line.strip():
+                    #     log_output_line(line)
+                    log_output_line(line)
+
                     last_activity = time.time()
 
             
@@ -67,7 +77,7 @@ class SSHConnection:
         
     
 def log_output_line(line):
-    print(f"[REMOTE] {line.strip()}")
+    print(f"[REMOTE]>> {line.strip()}")
 
     
 
