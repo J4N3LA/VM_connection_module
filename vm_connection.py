@@ -17,13 +17,16 @@ class HostUnreachable(Exception):
 
 
 class SSHConnection:
-    def __init__(self,host,port, user, key_path):
+    def __init__(self,host,port, user, key_path, script_path_local,script_path_remote,local_log_file):
         self.host = host
         self.port = port
         self.user = user
         self.key_path = key_path
         self.boot_after = None
         self.boot_before = None
+        self.script_path_local = script_path_local
+        self.script_path_remote = script_path_remote
+        self.local_log_file = local_log_file
 
     def get_boot(self):
         stdin,stdout,stder = self.client.exec_command(f"ssh {self.user}@{self.host} -p {self.port} uptime -s")
@@ -55,8 +58,8 @@ class SSHConnection:
     def reconnect(self,retries,delay):
         for _ in range(retries):
             if self.connect():
-                # self.boot_after = self.get_boot()
-                self.boot_after = datetime.strptime("2025-08-11 12:40:30","%Y-%m-%d %H:%M:%S")
+                self.boot_after = self.get_boot()
+                # self.boot_after = datetime.strptime("2025-08-11 12:40:30","%Y-%m-%d %H:%M:%S")
                 return True
         raise HostUnreachable("All reconnection attemtps failed")
                     
@@ -91,22 +94,20 @@ class SSHConnection:
                 time.sleep(delay)
             
         raise HostUnreachable(f"Host {self.host} on port {self.port} is unreachable after multiple retries.")
-            
+
+    def upload_script(self):
+        os.system(f"scp -i {self.key_path} {self.script_path_local} {self.user}@{self.host}:{self.script_path_remote}")
+        print(f"Script: {self.script_path_local} uploaded to {self.host}:{self.script_path_remote}")
         
     def execute(self,log_output_line,timeout):
         self.boot_before = self.get_boot()
         transport_name = self.client.get_transport()
         channel = transport_name.open_session()
         channel.get_pty()
-    
-        channel.exec_command(
-        "bash -c 'set -e; "
-        "for i in {0..1000}; do echo hello $((i+1)) && sleep 0.5; done; "
-        "ls -l /root; "
-        "for i in {0..5}; do echo hello $((i+1)) && sleep 0.5; done'"
-        )
 
-        # channel.exec_command("bash -c 'sleep 100'")
+        log_output_line(f"==={datetime.now()}===",self.local_log_file)
+
+        channel.exec_command(f"bash -c '{self.script_path_remote} | tee /tmp/script.log'")
 
         last_activity  = time.time()
         data_stdout = ""
@@ -120,7 +121,7 @@ class SSHConnection:
                         line, data_stdout = data_stdout.split("\n",1)
                         # if line.strip():
                         #     log_output_line(line)
-                        log_output_line(line)
+                        log_output_line(line,self.local_log_file)
                         last_activity = time.time()
                     
 
@@ -130,7 +131,7 @@ class SSHConnection:
                         line, data_stderr = data_stderr.split("\n",1)
                         # if line.strip():
                         #     log_output_line(line)
-                        log_output_line(line)
+                        log_output_line(line,self.local_log_file)
                         last_activity = time.time()
 
                 if time.time() - last_activity >= timeout:
@@ -141,26 +142,31 @@ class SSHConnection:
                     exit_code = channel.recv_exit_status()
                     if exit_code == -1:
                         raise ConnectionError("SSH connection lost before command finished")
+                    else:
+                        print("Script execution completed, to review output/errors please read: ")
+                        break
                 # return self.exit_status
-            time.sleep(0.1)
+                time.sleep(0.1)
 
 
         except Exception as e:
             print(f"Error during execution / Connection lost:{e}\n")
-            if not self.reconnect(3,5):
-                return -10
+
+            if not self.reconnect(3,5): return -10
             
-            if self.boot_before < self.boot_after:
-                print("Reboot detected when executing scrip!") 
+            if self.boot_before < self.boot_after: print("Reboot detected when executing scrip!") 
 
     def close(self):
         if hasattr(self, 'client'):
             self.client.close()
         else:
             print("No active client to close.")
-        
-def log_output_line(line):
+
+def log_output_line(line,local_log_file):
     print(f"[REMOTE] >> {line.strip()}")
+    with open(local_log_file,'a') as f:
+        f.write(line.strip('\n') + "\n")
+
 
     
 
@@ -174,11 +180,16 @@ conn = SSHConnection(
                     host="127.0.0.1",
                     port=22,
                     user="njanelidze",
-                    key_path="/home/njanelidze/.ssh/id_ed25519"
+                    key_path="/home/njanelidze/.ssh/id_ed25519",
+                    script_path_local="./script.sh",
+                    script_path_remote="/tmp/script.sh",
+                    local_log_file="/tmp/local_logs.sh"
                     )
 
 conn.connect()
-conn.execute(log_output_line,5)
+conn.upload_script()
+
+conn.execute(log_output_line,300)
 
 
 # conn.reconnect(1,5)
