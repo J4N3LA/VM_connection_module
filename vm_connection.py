@@ -17,7 +17,7 @@ class HostUnreachable(Exception):
 
 
 class SSHConnection:
-    def __init__(self,host,port, user, key_path, script_path_local,script_path_remote,local_log_file):
+    def __init__(self,host,port, user, key_path, script_path_local,script_path_remote,local_log_file,remote_log_file):
         self.host = host
         self.port = port
         self.user = user
@@ -27,6 +27,7 @@ class SSHConnection:
         self.script_path_local = script_path_local
         self.script_path_remote = script_path_remote
         self.local_log_file = local_log_file
+        self.remote_log_file = remote_log_file
 
     def get_boot(self):
         stdin,stdout,stder = self.client.exec_command(f"ssh {self.user}@{self.host} -p {self.port} uptime -s")
@@ -58,9 +59,11 @@ class SSHConnection:
     def reconnect(self,retries,delay):
         for _ in range(retries):
             if self.connect():
-                self.boot_after = self.get_boot()
+                # self.boot_after = self.get_boot()
                 # self.boot_after = datetime.strptime("2025-08-11 12:40:30","%Y-%m-%d %H:%M:%S")
                 return True
+            
+
         raise HostUnreachable("All reconnection attemtps failed")
                     
 
@@ -107,7 +110,8 @@ class SSHConnection:
 
         log_output_line(f"==={datetime.now()}===",self.local_log_file)
 
-        channel.exec_command(f"bash -c '{self.script_path_remote} | tee /tmp/script.log'")
+        print("Starting process...")
+        channel.exec_command(f"screen -S script_execution {self.script_path_remote}")
 
         last_activity  = time.time()
         data_stdout = ""
@@ -125,14 +129,14 @@ class SSHConnection:
                         last_activity = time.time()
                     
 
-                while channel.recv_stderr_ready():
-                    data_stderr += channel.recv_stderr(1024).decode()
-                    while "\n" in data_stderr:
-                        line, data_stderr = data_stderr.split("\n",1)
-                        # if line.strip():
-                        #     log_output_line(line)
-                        log_output_line(line,self.local_log_file)
-                        last_activity = time.time()
+                # while channel.recv_stderr_ready():
+                #     data_stderr += channel.recv_stderr(1024).decode()
+                #     while "\n" in data_stderr:
+                #         line, data_stderr = data_stderr.split("\n",1)
+                #         # if line.strip():
+                #         #     log_output_line(line)
+                #         log_output_line(line,self.local_log_file)
+                #         last_activity = time.time()
 
                 if time.time() - last_activity >= timeout:
                     print("Time exceeded. exiting...")
@@ -148,13 +152,59 @@ class SSHConnection:
                 # return self.exit_status
                 time.sleep(0.1)
 
-
         except Exception as e:
             print(f"Error during execution / Connection lost:{e}\n")
+            return self.execute_after_reconnect(log_output_line,self.remote_log_file,timeout)
 
-            if not self.reconnect(3,5): return -10
+            # if not self.reconnect(3,5): return -10
             
-            if self.boot_before < self.boot_after: print("Reboot detected when executing scrip!") 
+            # if self.boot_before < self.boot_after: print("Reboot detected when executing scrip!") 
+
+    def execute_after_reconnect(self,log_output_line,remote_log_file,timeout):
+        try:
+            # if not self.client or not self.client.get_transport() or not self.client.get_transport().is_active():
+            #     print("T reconnecting...")
+            if not self.reconnect(3,5):
+                print("Reconnection attempts failed")
+                return -10
+        except HostUnreachable as e:
+            print(f"Reconnect failed: {e}")
+            return -10
+        
+        reconnected_transport_name = self.client.get_transport()
+        channel = reconnected_transport_name.open_session()
+        channel.get_pty()
+        channel.exec_command(f"screen -r script_execution")
+
+        last_activity  = time.time()
+        data_stdout = ""
+        print("Connection restored. streaming remote log file data...")
+
+        try:
+            while True:
+                while channel.recv_ready():
+                    data_stdout += channel.recv(1024).decode()
+                    while "\n" in data_stdout:
+                        line, data_stdout = data_stdout.split("\n",1)
+                        log_output_line(line,self.local_log_file)
+                        last_activity = time.time()
+
+                if time.time() - last_activity >= timeout:
+                    print("Time exceeded. exiting...")
+                    return -5
+                
+                if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
+                    exit_code = channel.recv_exit_status()
+                    if exit_code == -1:
+                        raise ConnectionError("SSH connection lost before command finished")
+                    else:
+                        print("Script execution completed, to review output/errors please read: ")
+                        break
+                time.sleep(0.1)
+        except Exception as e:
+            print(f"Failed to stream remote log data")
+            return -10
+            
 
     def close(self):
         if hasattr(self, 'client'):
@@ -166,6 +216,8 @@ def log_output_line(line,local_log_file):
     print(f"[REMOTE] >> {line.strip()}")
     with open(local_log_file,'a') as f:
         f.write(line.strip('\n') + "\n")
+
+
 
 
     
@@ -183,7 +235,8 @@ conn = SSHConnection(
                     key_path="/home/njanelidze/.ssh/id_ed25519",
                     script_path_local="./script.sh",
                     script_path_remote="/tmp/script.sh",
-                    local_log_file="/tmp/local_logs.sh"
+                    local_log_file="/tmp/local_script.log",
+                    remote_log_file="/tmp/remote_script.log"
                     )
 
 conn.connect()
