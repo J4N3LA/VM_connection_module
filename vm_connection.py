@@ -5,6 +5,9 @@ import socket
 from datetime import datetime
 import time
 import sys
+import re
+
+ANSI_ESCAPE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
 
 class RebootNotify(Exception):
     def __init__(self, message):
@@ -17,7 +20,7 @@ class HostUnreachable(Exception):
 
 
 class SSHConnection:
-    def __init__(self,host,port, user, key_path, script_path_local,script_path_remote,local_log_file,remote_log_file):
+    def __init__(self,host,port, user, key_path, script_path_local,script_path_remote,local_log_file):
         self.host = host
         self.port = port
         self.user = user
@@ -27,10 +30,10 @@ class SSHConnection:
         self.script_path_local = script_path_local
         self.script_path_remote = script_path_remote
         self.local_log_file = local_log_file
-        self.remote_log_file = remote_log_file
 
     def get_boot(self):
-        stdin,stdout,stder = self.client.exec_command(f"ssh {self.user}@{self.host} -p {self.port} uptime -s")
+        # stdin,stdout,stder = self.client.exec_command(f"ssh {self.user}@{self.host} -p {self.port} uptime -s")
+        stdin,stdout,stder = self.client.exec_command(f"uptime -s")
         boot = stdout.read().decode().strip()
         boot_time = datetime.strptime(boot, "%Y-%m-%d %H:%M:%S")
         return boot_time
@@ -59,7 +62,7 @@ class SSHConnection:
     def reconnect(self,retries,delay):
         for _ in range(retries):
             if self.connect():
-                # self.boot_after = self.get_boot()
+                self.boot_after = self.get_boot()
                 # self.boot_after = datetime.strptime("2025-08-11 12:40:30","%Y-%m-%d %H:%M:%S")
                 return True
             
@@ -98,24 +101,35 @@ class SSHConnection:
             
         raise HostUnreachable(f"Host {self.host} on port {self.port} is unreachable after multiple retries.")
 
+
     def upload_script(self):
-        os.system(f"scp -i {self.key_path} {self.script_path_local} {self.user}@{self.host}:{self.script_path_remote}")
-        print(f"Script: {self.script_path_local} uploaded to {self.host}:{self.script_path_remote}")
+            sftp = self.client.open_sftp()
+            sftp.put(self.script_path_local, self.script_path_remote)
+            sftp.close()
+            _,_,stderr = self.client.exec_command(f"chmod +x {self.script_path_remote}")
+            error = stderr.read().decode().strip()
+            if error:
+                raise PermissionError("chmod +x failed. Check if file was uploaded")
+            else:
+                print(f"Script: {self.script_path_local} uploaded to {self.host}:{self.script_path_remote}")
+        
+
         
     def execute(self,log_output_line,timeout):
-        self.boot_before = self.get_boot()
         transport_name = self.client.get_transport()
         channel = transport_name.open_session()
         channel.get_pty()
 
-        log_output_line(f"==={datetime.now()}===",self.local_log_file)
+
+        self.boot_before = self.get_boot()
+
 
         print("Starting process...")
         channel.exec_command(f"screen -S script_execution {self.script_path_remote}")
+        # channel.exec_command(f"screen -c /dev/null -S script_execution {self.script_path_remote}")
 
         last_activity  = time.time()
         data_stdout = ""
-        data_stderr = ""
         try:
             print("Starting process...")
             while True:
@@ -123,20 +137,8 @@ class SSHConnection:
                     data_stdout += channel.recv(1024).decode()
                     while "\n" in data_stdout:
                         line, data_stdout = data_stdout.split("\n",1)
-                        # if line.strip():
-                        #     log_output_line(line)
                         log_output_line(line,self.local_log_file)
                         last_activity = time.time()
-                    
-
-                # while channel.recv_stderr_ready():
-                #     data_stderr += channel.recv_stderr(1024).decode()
-                #     while "\n" in data_stderr:
-                #         line, data_stderr = data_stderr.split("\n",1)
-                #         # if line.strip():
-                #         #     log_output_line(line)
-                #         log_output_line(line,self.local_log_file)
-                #         last_activity = time.time()
 
                 if time.time() - last_activity >= timeout:
                     print("Time exceeded. exiting...")
@@ -144,26 +146,21 @@ class SSHConnection:
                 
                 if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
                     exit_code = channel.recv_exit_status()
-                    if exit_code == -1:
+                    if exit_code != 0:
                         raise ConnectionError("SSH connection lost before command finished")
                     else:
-                        print("Script execution completed, to review output/errors please read: ")
+                        print(exit_code)
+                        print(f"Channel streaming completed, to review output/errors please read: {self.local_log_file}")
                         break
                 # return self.exit_status
                 time.sleep(0.1)
 
         except Exception as e:
-            print(f"Error during execution / Connection lost:{e}\n")
-            return self.execute_after_reconnect(log_output_line,self.remote_log_file,timeout)
+            print(f"Error during streaming / Connection lost:{e}\n")
+            return self.execute_after_reconnect(log_output_line,timeout)
 
-            # if not self.reconnect(3,5): return -10
-            
-            # if self.boot_before < self.boot_after: print("Reboot detected when executing scrip!") 
-
-    def execute_after_reconnect(self,log_output_line,remote_log_file,timeout):
+    def execute_after_reconnect(self,log_output_line,timeout):
         try:
-            # if not self.client or not self.client.get_transport() or not self.client.get_transport().is_active():
-            #     print("T reconnecting...")
             if not self.reconnect(3,5):
                 print("Reconnection attempts failed")
                 return -10
@@ -178,8 +175,8 @@ class SSHConnection:
 
         last_activity  = time.time()
         data_stdout = ""
-        print("Connection restored. streaming remote log file data...")
-
+        log_output_line(f"{datetime.now()}",self.local_log_file)
+        print("Connection restored to 'screen' session. streaming the output...")
         try:
             while True:
                 while channel.recv_ready():
@@ -195,15 +192,18 @@ class SSHConnection:
                 
                 if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
                     exit_code = channel.recv_exit_status()
-                    if exit_code == -1:
+                    if exit_code != 0:
                         raise ConnectionError("SSH connection lost before command finished")
                     else:
-                        print("Script execution completed, to review output/errors please read: ")
+                        print(exit_code)
+                        print(f"Channel streaming completed, to review output/errors please read: {self.local_log_file}")
                         break
+                # return self.exit_status
                 time.sleep(0.1)
+
         except Exception as e:
-            print(f"Failed to stream remote log data")
-            return -10
+            print(f"Error during streaming / Connection lost:{e}\n")
+            return self.execute_after_reconnect(log_output_line,timeout)
             
 
     def close(self):
@@ -212,45 +212,49 @@ class SSHConnection:
         else:
             print("No active client to close.")
 
+
+# ANSI_ESCAPE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+
+# def strip_ansi_codes(text):
+#     return ANSI_ESCAPE.sub('', text)
+
+
 def log_output_line(line,local_log_file):
-    print(f"[REMOTE] >> {line.strip()}")
     with open(local_log_file,'a') as f:
+        print(f"[REMOTE] >> {line.strip()}")
         f.write(line.strip('\n') + "\n")
 
+if __name__ == "__main__":
+
+    script_name = "script.sh"
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    log_filename = f"/tmp/{script_name}_{timestamp}.log"
 
 
+    conn = SSHConnection(
+                        # host="192.168.0.118",
+                        host="127.0.0.1",
 
-    
+                        port=22,
+                        user="vm-connection-test",
+                        key_path="/home/njanelidze/.ssh/id_ed25519",
+                        script_path_local=f"./{script_name}",
+                        script_path_remote=f"/tmp/{script_name}]",
+                        local_log_file=log_filename
+                        )
 
-            
-        
+    conn.connect()
+    conn.upload_script()
 
-        
-
-
-conn = SSHConnection(
-                    host="127.0.0.1",
-                    port=22,
-                    user="njanelidze",
-                    key_path="/home/njanelidze/.ssh/id_ed25519",
-                    script_path_local="./script.sh",
-                    script_path_remote="/tmp/script.sh",
-                    local_log_file="/tmp/local_script.log",
-                    remote_log_file="/tmp/remote_script.log"
-                    )
-
-conn.connect()
-conn.upload_script()
-
-conn.execute(log_output_line,300)
+    conn.execute(log_output_line,300)
 
 
-# conn.reconnect(1,5)
-# conn.get_boot()
-# conn.is_alive(3,5)
+    # conn.reconnect(1,5)
+    # conn.get_boot()
+    # conn.is_alive(3,5)
 
-conn.close()
-# conn.reconnect(3,5)
+    conn.close()
+    # conn.reconnect(3,5)
 
 
 
