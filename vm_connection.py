@@ -27,7 +27,6 @@ class SSHConnection:
         self.local_log_file = local_log_file
 
     def get_boot(self):
-        # stdin,stdout,stder = self.client.exec_command(f"ssh {self.user}@{self.host} -p {self.port} uptime -s")
         _,stdout,_ = self.client.exec_command(f"uptime -s")
         boot = stdout.read().decode().strip()
         boot_time = datetime.strptime(boot, "%Y-%m-%d %H:%M:%S")
@@ -58,8 +57,9 @@ class SSHConnection:
         for _ in range(retries):
             if self.connect():
                 self.boot_after = self.get_boot()
-                # self.boot_after = datetime.strptime("2025-08-11 12:40:30","%Y-%m-%d %H:%M:%S")
+                # self.boot_after = datetime.strptime("2026-08-11 12:40:30","%Y-%m-%d %H:%M:%S")
                 return True
+            time.sleep(delay)
         raise HostUnreachable("All reconnection attemtps failed")
                     
 
@@ -81,7 +81,7 @@ class SSHConnection:
                     print(f"    Socket  check status: {socket_check}")
                     socket_check = False
 
-            if os.system(f"ssh -o ConnectTimeout=5 {self.user}@{self.host} -p {self.port} whoami > /dev/null 2>&1") == 0: ssh_check = True
+            if os.system(f"ssh -o ConnectTimeout=10 {self.user}@{self.host} -p {self.port} whoami > /dev/null 2>&1") == 0: ssh_check = True
             print(f"    SSH check status: {ssh_check}")
 
             if ping_check or socket_check or ssh_check: 
@@ -94,6 +94,7 @@ class SSHConnection:
 
 
     def upload_script(self):
+        try:
             sftp = self.client.open_sftp()
             sftp.put(self.script_path_local, self.script_path_remote)
             sftp.close()
@@ -103,23 +104,20 @@ class SSHConnection:
                 raise PermissionError("chmod +x failed. Check if file was uploaded")
             else:
                 print(f"Script: {self.script_path_local} uploaded to {self.host}:{self.script_path_remote}")
+        except Exception as e:
+            print(f"Error occured during file upload: {e}")
         
 
         
     def execute(self,log_output_line,timeout):
         transport_name = self.client.get_transport()
-        # channel_screen = transport_name.open_session()
-        # channel_screen.get_pty()
         channel = transport_name.open_session()
         channel.get_pty()
         self.boot_before = self.get_boot()
-        print("Starting process...")
-        # channel_screen.exec_command(f"/usr/bin/screen -dmS script_execution  bash -c '{self.script_path_remote} > /tmp/script_exec_out.log 2>&1'")
-        # channel.exec_command(f"screen -S script_execution {self.script_path_remote}")
+        print("Starting process as Tmux session...")
+
         channel.exec_command(f"tmux new -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
-
-
-        # channel_read_log.exec_command(f"tail -f  /tmp/script_exec_out.log")
+        # channel.exec_command(f"sleep 100")
 
         last_activity  = time.time()
         data_stdout = ""
@@ -129,6 +127,7 @@ class SSHConnection:
                     data_stdout += channel.recv(1024).decode()
                     while "\n" in data_stdout:
                         line, data_stdout = data_stdout.split("\n",1)
+                        # if line.strip():
                         log_output_line(line,self.local_log_file)
                         last_activity = time.time()
 
@@ -167,7 +166,13 @@ class SSHConnection:
         last_activity  = time.time()
         data_stdout = ""
         log_output_line(f"{datetime.now()}",self.local_log_file)
-        print("Connection restored to 'screen' session. streaming the output...")
+        print("Connection restored to 'Tmux' session. streaming the output...")
+
+        if self.boot_before < self.boot_after:
+            try:
+                raise RebootNotify("====REBOOT DETECTED====")
+            except RebootNotify as e:
+                print(e)
         try:
             while True:
                 while channel.recv_ready():
@@ -203,14 +208,14 @@ class SSHConnection:
         else:
             print("No active client to close.")
 
-# def clean_ansi(text):
-#     return ansi_escape.sub('', text)
 
 def log_output_line(line,local_log_file):
-    clean_line = ANSI_ESCAPE.sub('',line)
-    with open(local_log_file,'a') as f:
-        print(f"[REMOTE] >> {clean_line.strip()}")
-        f.write(clean_line.strip('\n') + "\n")
+    clean_line = ANSI_ESCAPE.sub('',line).strip()
+    if clean_line and not clean_line.startswith("[script_ex0:tmux") and not line == '':
+        with open(local_log_file,'a') as f:
+            print(f"[REMOTE] >> {clean_line}")
+            f.write(clean_line + "\n")
+
 
 if __name__ == "__main__":
 
@@ -227,7 +232,7 @@ if __name__ == "__main__":
                         [ -/]*  
                         [@-~]   
                     )
-                ''', re.VERBOSE)
+                    ''', re.VERBOSE)
 
 
     conn = SSHConnection(
@@ -242,18 +247,13 @@ if __name__ == "__main__":
                         local_log_file=log_filename,
                         )
 
-    conn.connect()
-    conn.upload_script()
-
-    conn.execute(log_output_line,300)
-
-
-    # conn.reconnect(1,5)
-    # conn.get_boot()
-    # conn.is_alive(3,5)
-
-    conn.close()
-    # conn.reconnect(3,5)
-
+    try:
+        conn.connect()
+        conn.upload_script()        
+        conn.execute(log_output_line, 300)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+    finally:
+        conn.close()
 
 
