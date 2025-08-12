@@ -120,13 +120,13 @@ class SSHConnection:
             print(f"Error occured during file upload: {e}")
         
         
-    def execute(self,log_output_line,timeout):
+    def execute(self,log_output_line,timeout,f):
         transport_name = self.client.get_transport()
         channel = transport_name.open_session()
         channel.get_pty()
         self.boot_before = self.get_boot()
+        print("File open for loggin...")
         print("Starting process as Tmux session...")
-
         channel.exec_command(f"tmux new -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
         # channel.exec_command(f"sleep 100")
 
@@ -139,7 +139,7 @@ class SSHConnection:
                     while "\n" in data_stdout:
                         line, data_stdout = data_stdout.split("\n",1)
                         # if line.strip():
-                        log_output_line(line,self.local_log_file)
+                        log_output_line(line,f)
                         last_activity = time.time()
 
                 if time.time() - last_activity >= timeout:
@@ -158,9 +158,9 @@ class SSHConnection:
 
         except Exception as e:
             print(f"Error during streaming / Connection lost:{e}\n")
-            return self.execute_after_reconnect(log_output_line,timeout)
+            return self.execute_after_reconnect(log_output_line,timeout,f)
 
-    def execute_after_reconnect(self,log_output_line,timeout):
+    def execute_after_reconnect(self,log_output_line,timeout,f):
         try:
             if not self.reconnect(3,5):
                 print("Reconnection attempts failed")
@@ -176,7 +176,7 @@ class SSHConnection:
 
         last_activity  = time.time()
         data_stdout = ""
-        log_output_line(f"{datetime.now()}",self.local_log_file)
+        log_output_line(f"{datetime.now()}",f)
         print("Connection restored to 'Tmux' session. streaming the output...")
 
         if self.boot_before < self.boot_after:
@@ -190,7 +190,7 @@ class SSHConnection:
                     data_stdout += channel.recv(1024).decode()
                     while "\n" in data_stdout:
                         line, data_stdout = data_stdout.split("\n",1)
-                        log_output_line(line,self.local_log_file)
+                        log_output_line(line,f)
                         last_activity = time.time()
 
                 if time.time() - last_activity >= timeout:
@@ -210,7 +210,7 @@ class SSHConnection:
 
         except Exception as e:
             print(f"Error during streaming / Connection lost:{e}\n")
-            return self.execute_after_reconnect(log_output_line,timeout)
+            return self.execute_after_reconnect(log_output_line,timeout,f)
             
 
     def close(self):
@@ -220,12 +220,11 @@ class SSHConnection:
             print("No active client to close.")
 
 
-def log_output_line(line,local_log_file):
+def log_output_line(line,f):
     clean_line = ANSI_ESCAPE.sub('',line).strip()
-    if clean_line and not clean_line.startswith("[script_ex0:tmux") and not line == '':
-        with open(local_log_file,'a') as f:
-            print(f"[REMOTE] >> {clean_line}")
-            f.write(clean_line + "\n")
+    if clean_line and not clean_line.startswith("[script_ex0:tmux") and not clean_line.startswith('10;?11;?') and not clean_line.startswith('[script_ex0:bash*'):
+        print(f"[REMOTE] >> {clean_line}")
+        f.write(clean_line + "\n")
 
 
 if __name__ == "__main__":
@@ -247,8 +246,8 @@ if __name__ == "__main__":
 
 
     conn = SSHConnection(
-                        host="192.168.0.50",
-                        # host="127.0.0.1",
+                        # host="192.168.0.50",
+                        host="127.0.0.1",
                         port=22,
                         # user="devops",
                         user="vm-connection-test",
@@ -258,13 +257,14 @@ if __name__ == "__main__":
                         local_log_file=log_filename,
                         )
 
-    try:
-        conn.connect()
-        conn.upload_script()        
-        conn.execute(log_output_line, 300)
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-    finally:
-        conn.close()
+    with open(log_filename,"a") as f:
+        try:
+            conn.connect()
+            conn.upload_script()        
+            conn.execute(log_output_line, 300,f)
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+        finally:
+            conn.close()
 
 
