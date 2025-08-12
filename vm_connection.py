@@ -1,5 +1,6 @@
 import paramiko
 import os
+import subprocess
 import socket
 from datetime import datetime
 import time
@@ -70,9 +71,14 @@ class SSHConnection:
             socket_check = False
             ssh_check = False
             print(f"Try {i}: Checking connections")
-            
-            if  os.system(f"ping -c 3 {self.host} > /dev/null 2>&1") == 0: ping_check = True
-            print(f"    Ping check status: {ping_check}")
+
+            if subprocess.run(["ping", "-c", "3", self.host],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL).returncode == 0:
+                ping_check = True
+                print(f"    Ping check status: {ping_check}")
+            else: print(f"    Ping check status: {ping_check}")
+
             try:
                 with socket.create_connection((self.host,self.port),timeout=3):
                     socket_check = True
@@ -81,8 +87,14 @@ class SSHConnection:
                     print(f"    Socket  check status: {socket_check}")
                     socket_check = False
 
-            if os.system(f"ssh -o ConnectTimeout=10 {self.user}@{self.host} -p {self.port} whoami > /dev/null 2>&1") == 0: ssh_check = True
-            print(f"    SSH check status: {ssh_check}")
+            if subprocess.run(["ssh", "-o", "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL).returncode == 0: 
+                ssh_check = True
+                print(f"    SSH connection check status: {ssh_check}")
+            else: print(f"    SSH connection check status: {ssh_check}")
+
+            
 
             if ping_check or socket_check or ssh_check: 
                 print(f"Host {self.host} on port {self.port} is active.")
@@ -107,7 +119,6 @@ class SSHConnection:
         except Exception as e:
             print(f"Error occured during file upload: {e}")
         
-
         
     def execute(self,log_output_line,timeout):
         transport_name = self.client.get_transport()
@@ -239,8 +250,8 @@ if __name__ == "__main__":
                         host="192.168.0.50",
                         # host="127.0.0.1",
                         port=22,
-                        user="devops",
-                        # user="vm-connection-test",
+                        # user="devops",
+                        user="vm-connection-test",
                         key_path="/home/njanelidze/.ssh/id_ed25519",
                         script_path_local=f"./{script_name}",
                         script_path_remote=f"/tmp/{script_name}",
