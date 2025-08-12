@@ -1,3 +1,4 @@
+# WORK IN PROGRESS...
 #   vm_connection
 #### SSH Script Executor with live output streaming and fail-recovery
 This python module lets us execute script on remote host, while streaming the output directly on our terminal.
@@ -19,6 +20,9 @@ pip install -r requirements.txt
 
 # After this you are ready to run the vm_connection.py
 ```
+### !!! ***This script can be run against ```RHEL/DEBIAN``` systems. Main requirement is that target  hosts must have ```tmux``` installed.*** !!! 
+I assume uptime and sshd will be present :)
+
 ---
 
 ## Components
@@ -45,10 +49,31 @@ pip install -r requirements.txt
                     )
 
 - #### `is_alive()`
-     ####  Method to check if remote host is alive. Takes following parameters:
-     - retries - number of retries before declaring host unreachable
-     - delays - delay in seconds between reties
-     #### To check if host is alive this method uses 3 different methods together:
+     ####  Method to check if remote host is alive/sshd service is running Takes following parameters:
+     - __retries__ - number of retries before declaring host unreachable
+     - __delays__ - delay in seconds between reties
+     #### To check if host is alive we use 3 different ways one by one on every retry. At least one of these checks must be ___True___ to return ___True___ from these method otherwise script exits:
+     - __ping__ - Send ICMP packet to remote host to check if it is alive. There is high possibility that ICMP packet will be dropeed therefore return value of ___False___ does not mean host is dead.
+     - __socket__ - Checks if it is possible to create TCP connection with remote host. Uses socket module and returns ___True/False___ based on the result.
+     - __SSH__ - Tries to create single-user ___ssh___ connection and execute  ___whoami___  command remote host. 
+     - __Other idea__ - If we use some kind of VM orchestrators (Vsphere,Proxmox...), Best way to check would have been to send request with curl towards its API and parse the recived data for VM state .
+
+     #### Example output of is_alive(2,5) method:
+        Trying to connect to 192.168.0.50:22...
+        Checking if host machine is active...
+        Try 1: Checking connections
+            Ping check status: False
+            Socket  check status: False
+            SSH connection check status: False
+        Try 2: Checking connections
+            Ping check status: False
+            Socket  check status: False
+            SSH connection check status: False
+        Could not connect to 192.168.0.50:22. Error: Host 192.168.0.50 on port 22 is unreachable after multiple retries.
+
+
+
+
 
 
 - #### `connect()`
