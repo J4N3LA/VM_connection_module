@@ -100,7 +100,7 @@ class SSHConnection:
                     print(f"    Socket  check status: {socket_check}")
                     socket_check = False
 
-            if subprocess.run(["ssh", "-o", "BatchMode=yes" "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
+            if subprocess.run(["ssh", "-o", "BatchMode=yes", "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL).returncode == 0: 
                 ssh_check = True
@@ -193,10 +193,9 @@ class SSHConnection:
         print("Connection restored to 'Tmux' session. streaming the output...")
 
         if self.boot_before < self.boot_after:
-            try:
-                raise RebootNotify("====REBOOT DETECTED====")
-            except RebootNotify as e:
-                print(e)
+            log_output_line("\nALERT: ====REBOOT DETECTED====\n", f)
+            # raise RebootNotify("====REBOOT DETECTED====")
+        
         try:
             while True:
                 while channel.recv_ready():
@@ -218,7 +217,6 @@ class SSHConnection:
                         print(exit_code)
                         print(f"Channel streaming completed, to review output/errors please read: {self.local_log_file}")
                         break
-                # return self.exit_status
                 time.sleep(0.1)
 
         except Exception as e:
@@ -233,14 +231,13 @@ class SSHConnection:
             print("No active client to close.")
 
 
-def log_output_line(line,f):
-    clean_line = ANSI_ESCAPE.sub('',line).strip()
-    if clean_line and not clean_line.startswith("[script_ex0:tmux") and not clean_line.startswith('10;?11;?') and not clean_line.startswith('[script_ex0:bash*'):
-        print(f"[REMOTE] >> {clean_line}")
-        f.write(clean_line + "\n")
-
-
 if __name__ == "__main__":
+
+    def log_output_line(line,f):
+        clean_line = ANSI_ESCAPE.sub('',line).strip()
+        if clean_line and not clean_line.startswith("[script_ex0:tmux") and not clean_line.startswith('10;?11;?') and not clean_line.startswith('[script_ex0:bash*'):
+            print(f"[REMOTE] >> {clean_line}")
+            f.write(clean_line + "\n")
 
     script_name = "script.sh"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -259,11 +256,11 @@ if __name__ == "__main__":
 
 
     conn = SSHConnection(
-                        host="192.168.0.50",
-                        # host="127.0.0.1",
+                        # host="192.168.0.50",
+                        host="127.0.0.1",
                         port=22,
                         # user="devops",
-                        user="vm-connfection-test",
+                        user="vm-connection-test",
                         key_path="/home/njanelidze/.ssh/id_ed25519",
                         script_path_local=f"./{script_name}",
                         script_path_remote=f"/tmp/{script_name}",
