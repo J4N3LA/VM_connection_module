@@ -1,10 +1,10 @@
 import paramiko
-import os
 import subprocess
 import socket
 from datetime import datetime
 import time
 import re
+import sys
 
 
 class RebootNotify(Exception):
@@ -33,7 +33,7 @@ class SSHConnection:
         boot_time = datetime.strptime(boot, "%Y-%m-%d %H:%M:%S")
         return boot_time
 
-    def connect(self):
+    def connect(self,timeout):
         print(f"Trying to connect to {self.host}:{self.port}...")
         try:
             if not self.is_alive(2,5):
@@ -41,18 +41,31 @@ class SSHConnection:
                 return False
         except HostUnreachable as e:
             print(f"Could not connect to {self.host}:{self.port}. Error: {e}")
-            return False
+            # return False
         
         try:
             self.client = paramiko.SSHClient()
             self.client.load_system_host_keys()
             self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self.client.connect(hostname=self.host,port=self.port,username=self.user,key_filename=self.key_path)
+            self.client.connect(hostname=self.host,
+                                port=self.port,
+                                username=self.user,
+                                key_filename=self.key_path,
+                                timeout=timeout,
+                                allow_agent=False,
+                                look_for_keys=False,
+                                password=None
+                                )
             print("Connection successfull.")
             return True
+        
+        except paramiko.AuthenticationException:
+            raise HostUnreachable("AUthentication failed")
+        except paramiko.SSHException as e:
+            raise  HostUnreachable(f"SSH protocl failed.\nError: {e}")
         except Exception as e:
-            print(f"Failed to connect.\nError: {e}")
-            return False
+            raise HostUnreachable(f"Could not connect to host:\nError: {e}")
+                                  
         
     def reconnect(self,retries,delay):
         for _ in range(retries):
@@ -87,12 +100,12 @@ class SSHConnection:
                     print(f"    Socket  check status: {socket_check}")
                     socket_check = False
 
-            if subprocess.run(["ssh", "-o", "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
+            if subprocess.run(["ssh", "-o", "BatchMode=yes" "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL).returncode == 0: 
                 ssh_check = True
-                print(f"    SSH connection check status: {ssh_check}")
-            else: print(f"    SSH connection check status: {ssh_check}")
+                print(f"    SSH  check status: {ssh_check}")
+            else: print(f"    SSH  check status: {ssh_check}")
 
             
 
@@ -210,7 +223,7 @@ class SSHConnection:
 
         except Exception as e:
             print(f"Error during streaming / Connection lost:{e}\n")
-            return self.execute_after_reconnect(log_output_line,timeout,f)
+            # return self.execute_after_reconnect(log_output_line,timeout,f)
             
 
     def close(self):
@@ -246,11 +259,11 @@ if __name__ == "__main__":
 
 
     conn = SSHConnection(
-                        # host="192.168.0.50",
-                        host="127.0.0.1",
+                        host="192.168.0.50",
+                        # host="127.0.0.1",
                         port=22,
                         # user="devops",
-                        user="vm-connection-test",
+                        user="vm-connfection-test",
                         key_path="/home/njanelidze/.ssh/id_ed25519",
                         script_path_local=f"./{script_name}",
                         script_path_remote=f"/tmp/{script_name}",
@@ -259,12 +272,14 @@ if __name__ == "__main__":
 
     with open(log_filename,"a") as f:
         try:
-            conn.connect()
+            conn.connect(timeout=60)
             conn.upload_script()        
             conn.execute(log_output_line, 300,f)
         except Exception as e:
             print(f"Unexpected error: {e}")
         finally:
             conn.close()
+            sys.exit(1)
+    # conn.reconnect(2,5)
 
 
