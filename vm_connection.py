@@ -141,8 +141,8 @@ class SSHConnection:
         self.boot_before = self.get_boot()
         print("File open for loggin...")
         print("Starting process as Tmux session...")
-        # channel.exec_command(f"tmux new  -A -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
-        channel.exec_command(f"sleep 10")
+        channel.exec_command(f"tmux new  -A -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
+        # channel.exec_command(f"sleep 10")
 
         last_activity  = time.time()
         data_stdout = ""
@@ -244,9 +244,9 @@ if __name__ == "__main__":
             print(f"[REMOTE] >> {clean_line}")
             f.write(clean_line + "\n")
 
-    script_name = "script.sh"
+    # script_name = "script.sh"
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    log_filename = f"/tmp/{script_name}_{timestamp}.log"
+    log_filename = f"/tmp/script_exeution_{timestamp}.log"
     ANSI_ESCAPE = re.compile(r'''
                     \x1B    
                     (?:     
@@ -267,8 +267,8 @@ if __name__ == "__main__":
                         # user="devops",
                         user="vm-connection-test",
                         key_path="/home/njanelidze/.ssh/id_ed25519",
-                        script_path_local=f"./{script_name}",
-                        script_path_remote=f"/tmp/{script_name}",
+                        script_path_local=f"/home/njanelidze/Documents/Python/VM_connection_module/script.sh",
+                        script_path_remote=f"/tmp/script.sh",
                         local_log_file=log_filename,
                         )
 
