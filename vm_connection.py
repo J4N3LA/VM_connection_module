@@ -141,8 +141,8 @@ class SSHConnection:
         self.boot_before = self.get_boot()
         print("File open for loggin...")
         print("Starting process as Tmux session...")
-        channel.exec_command(f"tmux new  -A -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
-        # channel.exec_command(f"sleep 100")
+        # channel.exec_command(f"tmux new  -A -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
+        channel.exec_command(f"sleep 10")
 
         last_activity  = time.time()
         data_stdout = ""
@@ -157,7 +157,7 @@ class SSHConnection:
                         last_activity = time.time()
 
                 if time.time() - last_activity >= timeout:
-                    print("Time exceeded. exiting...")
+                    print(f"Time exceeded. exiting...\nTo review script output/errors please read {self.local_log_file}")
                     return -5
                 
                 if channel.exit_status_ready() and not  channel.recv_ready() and not channel.recv_stderr_ready():
@@ -211,7 +211,7 @@ class SSHConnection:
                         last_activity = time.time()
 
                 if time.time() - last_activity >= timeout:
-                    print("Time exceeded. exiting...")
+                    print(f"Time exceeded. exiting...\nTo review script output/errors please read {self.local_log_file}")
                     return -5
                 
                 if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
@@ -276,7 +276,7 @@ if __name__ == "__main__":
         try:
             conn.connect(timeout=60)
             conn.upload_script()        
-            conn.execute(log_output_line, 300,f)
+            conn.execute(log_output_line, 3,f)
         except RebootNotify as e:
             print(f"ALERT: {e}\nPlease rerun the program")
         except Exception as e:
