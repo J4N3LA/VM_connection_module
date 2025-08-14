@@ -1,10 +1,10 @@
-# WORK IN PROGRESS...
 #   vm_connection
-#### SSH Script Executor with live output streaming and fail-recovery
+### SSH Script Executor with live output streaming and fail-recovery
 This python module lets us execute script on remote host, while streaming the output directly on our terminal.
-It uses __'paramiko'__ module for creating SSH tunnel and __'tmux'__ sessions for connection failure recovery. More details usage will be covered below.
+It uses __'paramiko'__ module for creating SSH tunnel and __'tmux'__ sessions for connection failure recovery. More detailes of each component will be covered below.
 
-## Dependencies
+---
+## Dependencies & Usage
 This script was developed inside python __'venv'__ environment. list of required modules was generated using __```pip freeze > requirements.txt```__. You can use this generated file to install all required python modules using __```pip install -r /path/to/requirements.txt```__ command. 
 
 Usually it is recommended to run __```pip install```__ command inside your virtual-environment. Here is a quick guide to set up safe evironment for this script:
@@ -17,11 +17,32 @@ cd VM_connection_module
 python3 -m venv .
 source bin/activate
 pip install -r requirements.txt
-
-# After this you are ready to run the vm_connection.py
 ```
-### !!! ***This script can be run against ```RHEL/DEBIAN``` systems. Main requirement is that target  hosts must have ```tmux``` installed.*** !!! 
-I assume uptime and sshd will be present :)
+Since this module only uses key-based ssh authentication to remote hosts. It is required to have you user's public ssh-keys distributed to remote host.
+```
+# if you dont have ssh key-pair. First run 'ssh-keygen' command and fill it's prompts.
+
+ssh-keygen
+
+# After running 'ssh-keygen' command, you will need to copy generated public key (ending with .pub) to remote host
+# For this you can use 'ssh-copy-id'. This command will require remote  user's password for the first time.
+
+ssh-copy-id -i /path/to/generated/key.pub remote_host_user@remote_host_ip
+
+# After this you should be able to directly authenticate to remote host's ssh-agent using
+
+ssh remote_host_user@remote_host_ip
+
+# If prompted for 'Are you sure you want to continue connecting (yes/no)?' type yes
+```
+Main component that makes this script work is ```tmux```, so make sure to install it on remote hosts
+```
+sudo dnf install tmux -y       # RHEL/CentOS
+sudo apt install tmux -y       # Ubuntu/Debian
+
+```
+
+
 
 ---
 
@@ -54,9 +75,10 @@ I assume uptime and sshd will be present :)
      - __delays__ - delay in seconds between reties
      #### To check if host is alive we use 3 different ways one by one on every retry. At least one of these checks must be ___True___ to return ___True___ from these method otherwise script exits:
      - __ping__ - Send ICMP packet to remote host to check if it is alive. There is high possibility that ICMP packet will be dropeed therefore return value of ___False___ does not mean host is dead.
-     - __socket__ - Checks if it is possible to create TCP connection with remote host. Uses socket module and returns ___True/False___ based on the result.
-     - __SSH__ - Tries to create single-use ___ssh___ connection and execute  ___whoami___  command remote host. 
-     - __Other idea__ - If we use some kind of VM orchestrators (Vsphere,Proxmox...), Best way to check would have been to send request with curl towards its API and parse the recived data for VM state .
+     - __socket__ - Checks if it is possible to create TCP connection to remote host. Uses socket module and returns ___True/False___ based on the result.
+     - __SSH__ - Tries to create single-use ___ssh___ connection and execute  ___whoami___  command remote host.
+
+     - __Other idea__ - If we use some kind of VM orchestrators (Vsphere,Proxmox...), Best way to check would have been to send request with for example ```requests``` module  towards its API and parse the recived data for VM state .
 
      #### Example output of is_alive(2,5) method:
         Trying to connect to 192.168.0.50:22...
@@ -212,8 +234,12 @@ I assume uptime and sshd will be present :)
     #
 - ### `close()`
     #### This method simply clodes ```paramiko``` SSH client instance 
-### other:
-- #### `log_output_line()` - This function is responsible for printing recived data from the remote host's script output to out terminal, as well as logging this data to a local log file.
+___
+## Callback function for printing and logging:
+- #### `log_output_line()` - This function is responsible for printing recived data from the remote host's script output to our terminal, as well as logging this data to a local log file.
+    #### It called from ```execute()``` and ```execute_after_reconnect()``` methdos. Thiese methods pass data as ```line``` argument to this function. After recieving, the data is filtered by removing ANSI symbols and tmux status bars (A little bit buggy for now :) ) .
+    #### After filtration data is passed into print statement for us to see and write() method for local logging.
+
 
 ```
     def log_output_line(line,f):
@@ -222,8 +248,11 @@ I assume uptime and sshd will be present :)
             print(f"[REMOTE] >> {clean_line}")
             f.write(clean_line + "\n")
 ```
+## Unit testing using pytest and pytest-mock
+
+
+
 
 
 # WORK IN PROGRESS...
-
 
