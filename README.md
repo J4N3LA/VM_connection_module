@@ -4,7 +4,7 @@ This python module lets us execute script on remote host, while streaming the ou
 It uses __'paramiko'__ module for creating SSH tunnel and __'tmux'__ sessions for connection failure recovery. More detailes of each component will be covered below.
 
 ---
-## Dependencies & Usage
+## Dependencies & requirements
 This script was developed inside python __'venv'__ environment. list of required modules was generated using __```pip freeze > requirements.txt```__. You can use this generated file to install all required python modules using __```pip install -r /path/to/requirements.txt```__ command. 
 
 Usually it is recommended to run __```pip install```__ command inside your virtual-environment. Here is a quick guide to set up safe evironment for this script:
@@ -39,9 +39,7 @@ Main component that makes this script work is ```tmux```, so make sure to instal
 ```
 sudo dnf install tmux -y       # RHEL/CentOS
 sudo apt install tmux -y       # Ubuntu/Debian
-
 ```
-
 
 
 ---
@@ -53,9 +51,9 @@ sudo apt install tmux -y       # Ubuntu/Debian
      - port - Remote host's ssh port
      - user - Remote host's username
      - key_path - Rrivate ssh key location for authentication to remote host
-     - script_path_local - Location of script to copy and run
-     - script_path_remote - Location of where the script will be copied and executed from on remote host
-     - local_log_file - location to store script execution logs locally
+     - script_path_local - Location of script to copy and run (full path)
+     - script_path_remote - Location of where the script will be copied and executed from on remote host (full path)
+     - local_log_file - location to store script execution logs locally  <---- hardcoded inside main portion (planning to change)
 
      #### Example:
         conn = SSHConnection(
@@ -63,9 +61,8 @@ sudo apt install tmux -y       # Ubuntu/Debian
                     port=22,
                     user="devops",
                     key_path="/home/njanelidze/.ssh/id_ed25519",
-                    script_path_local=f"./{script_name}",  
-                                                            --- 'script_name' is a var set in code
-                    script_path_remote=f"/tmp/{script_name}",
+                    script_path_local="/path/to/script",  
+                    script_path_remote=f"/path/to/script",
                     local_log_file=log_filename,
                     )
 #
@@ -249,10 +246,135 @@ ___
             f.write(clean_line + "\n")
 ```
 ## Unit testing using pytest and pytest-mock
+#### Since it is required to perform tests on the project. I created ```test_vm_connection.py``` file, that includes test for different units of the ```vm_connection.py``` file.
+#### Unit test are performed using pytest module. The simulation of resonses is performed by pytest-mock module.
+
+####  I created fixture SSHConnection object ```class_object```, that will be used further passed in testing functions. 
+#### Beside this  ```test_vm_connection.py``` inlude tests for:
+- ### __Connecting to remote host__ - test_connection()
+     Mocked ```is_alive``` method so it always return True. 
+    ```
+        mocker.patch.object(class_object,"is_alive",return_value=True)
+    ```
+     Mocked paramiko ```SSHClient``` object
+    ```
+        mock_client = mocker.Mock()
+        mocker.patch("paramiko.SSHClient", return_value=mock_client)
+    ```
+    #### Finally I am asserting ```connect()``` method to simulate connection process and retrive value
+
+- ### Reconnecting to remote host - test_reconnect_success()
+    Since ```Reconnect()``` method uses ```connect()``` method for fixed number of times, I simulated two fake return values ___False___ and then ___True___ from ```connect``` method to check it's behavior on first failure:
+    ```
+    mocker.patch.object(class_object, "connect", side_effect=[False, True])
+    ```
+    The ```get_boot()``` method is useless in this case so I am faking it's return as ___None___
+    ```
+    mocker.patch.object(class_object,"get_boot",return_value=None)
+    ```
+    Finally I am asserting return result of ```reconnect(2,0)```
+
+- ### Failed reconnecting exception test - test_reconnect_failure()
+    In our original code ```reconnect``` method raises exception if all ```connect()``` calls fails. So we are simluating that exception is raised on all ```connect()``` failures
+    ```
+    # Mock return values of connect() and get_boot()
+    mocker.patch.object(class_object, "connect", return_value=False)
+    mocker.patch.object(class_object, "get_boot", return_value=None)
+
+    #Simulate exception raise
+    with pytest.raises(HostUnreachable) as check_value:
+        class_object.reconnect(retries=2, delay=0)
+
+    # Check exception message
+    assert "All reconnection attemtps failed" in str(check_value.value)
+    ```
+
+- ### Test execute data logging - test_execute()
+    For this test we are testing if recived data from SSH channel is handled correctly. First we are "disabling" ```execute_after_reconnect()``` and ```get_boot()``` methods.
+    ```
+    mocker.patch.object(class_object,"get_boot",return_value = None)
+    mocker.patch.object(class_object, "execute_after_reconnect", return_value=None)
+    ```
+    After that we are mocking paramiko's channel methods
+    ```
+    mock_channel = mocker.Mock()
+    mock_channel.recv_ready.side_effect = [True,False]     
+    mock_channel.recv.side_effect = [b'line1\nline2\nline3\nline4\n']   < -------- Faking recived data
+    mock_channel.exit_status_ready.side_effect = [False,True] 
+    mock_channel.recv_exit_status.return_value = 0
+
+    mock_transport = mocker.Mock()
+    mock_transport.open_session.return_value = mock_channel
+
+    class_object.client = mocker.Mock()
+    class_object.client.get_transport.return_value = mock_transport
+    ```
+    Next we are creating list ```mock_data_stdout = []``` to capture lines passed from callback function string. And also creating fake callback method 
+    ```
+        mock_data_stdout = []
+        def mock_logging(line,f):
+            mock_data_stdout.append(line)
+    ```
+    Finally calling the ```execute()``` method and checking if all data is present 
+    ```
+        class_object.execute(mock_logging,timeout=5,f=None)
+
+        assert "line1" in mock_data_stdout
+        assert "line2" in mock_data_stdout
+        assert "line3" in mock_data_stdout
+        assert "line4" in mock_data_stdout
+    ```
+
+- ### Simulate timeout for execute method - test_command_exec_timeout()
+    In this test we are testing timeout coditional that is present in our original ```execute()``` method. Since original declares timeout if current_time - last_activity > timeout and should exit the method with return value of -5. To achive this we must once again simulate SSH client, and channel methods with no data flow in them, Which can be accomplished by setting channel's readiness status to always __False__ and check return value.
+    ```
+    mock_channel = mocker.Mock()
+    mock_channel.recv_ready.return_value = False 
+    mock_channel.exit_status_ready.return_value = False
+    mock_channel.recv_exit_status.return_value = 0
+    ```
+    After mocking all relevant processes we call ```execute()``` with custome timeout value and assert its return value
+    ```
+        result = class_object.execute(mock_logging, timeout=1, f=None)
+        assert result == -5
+    ```
+
+- ### Simulating network drop to check reconnection function activation - test_execute_network_drop()
+    For this test we are deliberately raising exception inside ```execute()``` method's __try:__ block so that the __exception__ block calls ```reconnect_after_execute()``` method. We accomplish this by creating mock exception function and assigning it to ```client.recv_ready()```'s mock ```mock_channel.recv_ready```
+
+    ```
+        def recv_ready_side_effect():
+            raise Exception("netw drop")  
+        mock_channel.recv_ready.side_effect = recv_ready_side_effect
+    ```
+    Also this we are "disabling" actual execution output of ```execute_after_reconnect()``` method, Because We only need to check if it was called.
+    ```
+    execute_after_mock = mocker.patch.object(class_object, "execute_after_reconnect", return_value=None)
+    ```
+    finally after "disabling" unneeded paramiko class methods, we pass mock callback function into fake ```execute()``` method and check if fake ```execute_after_reconnect```(```execute_after_mock```) was called or not.
+    ```
+        def mock_logging(line, f):
+            mock_data_stdout.append(line)
+
+        class_object.execute(mock_logging, timeout=1, f=None)
+
+        assert execute_after_mock.called
+    ```
+
+- ### Test for reboot exception - test_reboot_notify_exception()
+    In this test we are checking if ```RebootNotify``` exception is called. To do this we are manually setting ```boot_before``` and ```boot_after``` values:
+    ```
+        class_object.boot_before = datetime.strptime("2025-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
+        class_object.boot_after  = datetime.strptime("2026-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
+    ```
+    mocking return value of ```reconnect()``` to ```True``` and checking if execution of ```reboot_after_notify()``` method raises and ```RebootNotify exception.
+    ```
+        mocker.patch.object(class_object, "reconnect", return_value=True)
+
+        with pytest.raises(RebootNotify):
+            class_object.execute_after_reconnect(mock_logging, timeout=5, f=None)
+    ```
 
 
 
-
-
-# WORK IN PROGRESS...
 
