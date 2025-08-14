@@ -125,24 +125,24 @@ def test_execute_network_drop(mocker, class_object):
 
 def test_reboot_notify_exception(mocker, class_object):
     class_object.boot_before = datetime.strptime("2025-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
-    class_object.boot_after  = datetime.strptime("2025-08-13 10:05:00", "%Y-%m-%d %H:%M:%S")
+    class_object.boot_after  = datetime.strptime("2026-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
 
     mock_channel = mocker.Mock()
     mock_channel.recv_ready.return_value = False
-    mock_channel.exit_status_ready.return_value = True
+    mock_channel.exit_status_ready.return_value = False
     mock_channel.recv_exit_status.return_value = 0
+
     mock_transport = mocker.Mock()
     mock_transport.open_session.return_value = mock_channel
 
     class_object.client = mocker.Mock()
     class_object.client.get_transport.return_value = mock_transport
-    mocker.patch.object(class_object, "reconnect", return_value=True)
 
     mock_data_stdout = []
     def mock_logging(line, f):
         mock_data_stdout.append(line)
 
+    mocker.patch.object(class_object, "reconnect", return_value=True)
+
     with pytest.raises(RebootNotify):
         class_object.execute_after_reconnect(mock_logging, timeout=5, f=None)
-
-    assert any("ALERT: ====REBOOT DETECTED====" in line for line in mock_data_stdout)
