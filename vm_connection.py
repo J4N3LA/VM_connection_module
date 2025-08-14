@@ -69,7 +69,7 @@ class SSHConnection:
         
     def reconnect(self,retries,delay):
         for _ in range(retries):
-            if self.connect():
+            if self.connect(60):
                 self.boot_after = self.get_boot()
                 # self.boot_after = datetime.strptime("2026-08-11 12:40:30","%Y-%m-%d %H:%M:%S")
                 return True
@@ -100,7 +100,7 @@ class SSHConnection:
                     print(f"    Socket  check status: {socket_check}")
                     socket_check = False
 
-            if subprocess.run(["ssh", "-o", "BatchMode=yes", "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
+            if subprocess.run(["ssh", "-o", "BatchMode=yes","-i", self.key_path,"-o", "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL).returncode == 0: 
                 ssh_check = True
@@ -131,6 +131,7 @@ class SSHConnection:
                 print(f"Script: {self.script_path_local} uploaded to {self.host}:{self.script_path_remote}")
         except Exception as e:
             print(f"Error occured during file upload: {e}")
+            sys.exit(1)
         
         
     def execute(self,log_output_line,timeout,f):
@@ -140,7 +141,7 @@ class SSHConnection:
         self.boot_before = self.get_boot()
         print("File open for loggin...")
         print("Starting process as Tmux session...")
-        channel.exec_command(f"tmux new -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
+        channel.exec_command(f"tmux new  -A -s script_execution 'tmux set-option -g status off; {self.script_path_remote}'")
         # channel.exec_command(f"sleep 100")
 
         last_activity  = time.time()
@@ -159,8 +160,9 @@ class SSHConnection:
                     print("Time exceeded. exiting...")
                     return -5
                 
-            
                 if channel.exit_status_ready() and not  channel.recv_ready() and not channel.recv_stderr_ready():
+                # if channel.exit_status_ready() and not  channel.recv_ready():
+
                     exit_code = channel.recv_exit_status()
                     if exit_code != 0:
                         raise ConnectionError("SSH connection lost before command finished")
@@ -168,7 +170,8 @@ class SSHConnection:
                         print(f"Channel streaming completed, to review output/errors please read: {self.local_log_file}")
                         break
                 time.sleep(0.1)
-
+        except RebootNotify:
+            raise
         except Exception as e:
             print(f"Error during streaming / Connection lost:{e}\n")
             return self.execute_after_reconnect(log_output_line,timeout,f)
@@ -182,6 +185,12 @@ class SSHConnection:
             print(f"Reconnect failed: {e}")
             return -10
         
+
+        if self.boot_before < self.boot_after:
+            log_output_line("\nALERT: ====REBOOT DETECTED====\n", f)
+            raise RebootNotify("====REBOOT DETECTED====")  
+        
+        
         reconnected_transport_name = self.client.get_transport()
         channel = reconnected_transport_name.open_session()
         channel.get_pty()
@@ -189,12 +198,8 @@ class SSHConnection:
 
         last_activity  = time.time()
         data_stdout = ""
-        log_output_line(f"{datetime.now()}",f)
+        log_output_line(f"--- Reconnected at {datetime.now().strptime("2026-08-11 12:40:30","%Y-%m-%d %H:%M:%S")} ---",f)
         print("Connection restored to 'Tmux' session. streaming the output...")
-
-        if self.boot_before < self.boot_after:
-            log_output_line("\nALERT: ====REBOOT DETECTED====\n", f)
-            # raise RebootNotify("====REBOOT DETECTED====")
         
         try:
             while True:
@@ -220,8 +225,8 @@ class SSHConnection:
                 time.sleep(0.1)
 
         except Exception as e:
-            print(f"Error during streaming / Connection lost:{e}\n")
-            # return self.execute_after_reconnect(log_output_line,timeout,f)
+            print(f"Error during streaming / Connection lost:{e}\nTo review streaming logs please read: {self.local_log_file}")
+            return self.execute_after_reconnect(log_output_line,timeout,f)
             
 
     def close(self):
@@ -272,11 +277,12 @@ if __name__ == "__main__":
             conn.connect(timeout=60)
             conn.upload_script()        
             conn.execute(log_output_line, 300,f)
+        except RebootNotify as e:
+            print(f"ALERT: {e}\nPlease rerun the program")
         except Exception as e:
             print(f"Unexpected error: {e}")
         finally:
             conn.close()
-            sys.exit(1)
-    # conn.reconnect(2,5)
+
 
 
