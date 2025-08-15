@@ -267,8 +267,8 @@ if __name__ == "__main__":
                         # user="devops",
                         user="vm-connection-test",
                         key_path="/home/njanelidze/.ssh/id_ed25519",
-                        script_path_local=f"/home/njanelidze/Documents/Python/VM_connection_module/script.sh",
-                        script_path_remote=f"/tmp/script.sh",
+                        script_path_local="/home/njanelidze/Documents/Python/VM_connection_module/script.sh",
+                        script_path_remote="/tmp/script.sh",
                         local_log_file=log_filename,
                         )
 
