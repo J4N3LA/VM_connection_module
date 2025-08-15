@@ -4,5 +4,8 @@
 for i in {0..5}; do echo hello $((i+1)) && sleep 0.5; done; 
 ls -l /root; 
 #exit -1
-for i in {0..5}; do echo hello $((i+1)) && sleep 0.5; done
+for i in {0..5}; do echo hello $((i+1)) && sleep 0.5; done;
+ls -l /root; 
+for i in {0..5}; do echo hello $((i+1)) && sleep 0.5; done;
+#exit -1
 
