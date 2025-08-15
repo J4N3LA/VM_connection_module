@@ -272,6 +272,7 @@ ___
 ## Unit testing using pytest and pytest-mock
 #### Since it is required to perform tests on the project. I created ```test_vm_connection.py``` file, that includes test for different units of the ```vm_connection.py``` file.
 #### Unit test are performed using pytest module. The simulation of resonses is performed by pytest-mock module.
+#### To run these tests  install ```pytest``` and ```pytest-mock``` pip modules (comes with requirements.txt). And run ```pytest test_vm_connection.py``` from project directory.
 
 ####  I created fixture SSHConnection object ```class_object```, that will be used further passed in testing functions. 
 #### Beside this  ```test_vm_connection.py``` inlude tests for:
