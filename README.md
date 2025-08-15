@@ -393,7 +393,7 @@ ___
         class_object.boot_before = datetime.strptime("2025-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
         class_object.boot_after  = datetime.strptime("2026-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
     ```
-    mocking return value of ```reconnect()``` to ```True``` and checking if execution of ```reboot_after_notify()``` method raises and ```RebootNotify exception.
+    mocking return value of ```reconnect()``` to ```True``` and checking if execution of ```reboot_after_notify()``` method raises and ```RebootNotify``` exception.
     ```
         mocker.patch.object(class_object, "reconnect", return_value=True)
 
@@ -402,5 +402,6 @@ ___
     ```
 #
 # WORK IN PROGRESS
+
 
 
