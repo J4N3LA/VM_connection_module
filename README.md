@@ -1,7 +1,12 @@
 #   vm_connection
-### SSH Script Executor with live output streaming and fail-recovery
-This python module lets us execute script on remote host, while streaming the output directly on our terminal.
-It uses __'paramiko'__ module for creating SSH tunnel and __'tmux'__ sessions for connection failure recovery. More detailes of each component will be covered below.
+## SSH Script Executor with live output streaming and fail-recovery
+#### This python module lets us execute script on remote host, while streaming the output directly on our terminal.
+#### It uses __'paramiko'__ module for creating SSH tunnel and __'tmux'__ sessions for connection failure recovery. Idea is to first upload script to remote host with sftp, than execute this script inside __'tmux'__ session, As soon as script produces stdout/stderr output we are receiveing it via paramiko'c ssh channels, filtering it from unwanted characters (terminal ANSI codes,newlines, tmux statusbars...) and passing filtered "data" to a callback function, which by itself prints it to our terminal and logs it inside local timestamped log file.
+#### Also main feature is to also recover our streaming process, for example when loosing network connection to remote  vm. This is also accomplished with the help of 'tmux' sessions. The initial command that ran our script inside tmux is independent from ssh session, meaning if our ssh channel goes down - script will continue running, and after we reconnect automatically we re-attach to the same 'tmux' session.
+#### This was the core idea of this module,  More detailes of each component will be covered below.
+
+
+##### !!! ***There is a small bug when initial start of streaming. first 4-6 lines of output gets duplicated, I think that is becasue of tmux's startup/intialization process. I think starting tmux session independently and then run command inside it will clean things up*** !!!
 
 ---
 ## Dependencies & requirements
@@ -374,7 +379,6 @@ ___
         with pytest.raises(RebootNotify):
             class_object.execute_after_reconnect(mock_logging, timeout=5, f=None)
     ```
-
 
 
 
