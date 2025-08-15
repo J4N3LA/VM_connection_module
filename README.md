@@ -3,7 +3,8 @@
 #### This python module lets us execute script on remote host, while streaming the output directly on our terminal.
 #### It uses __'paramiko'__ module for creating SSH tunnel and __'tmux'__ sessions for connection failure recovery. Idea is to first upload script to remote host with sftp, than execute this script inside __'tmux'__ session, As soon as script produces stdout/stderr output we are receiveing it via paramiko'c ssh channels, filtering it from unwanted characters (terminal ANSI codes,newlines, tmux statusbars...) and passing filtered "data" to a callback function, which by itself prints it to our terminal and logs it inside local timestamped log file.
 #### Also main feature is to also recover our streaming process, for example when loosing network connection to remote  vm. This is also accomplished with the help of 'tmux' sessions. The initial command that ran our script inside tmux is independent from ssh session, meaning if our ssh channel goes down - script will continue running, and after we reconnect automatically we re-attach to the same 'tmux' session.
-#### This was the core idea of this module,  More detailes of each component will be covered below.
+#### This is the core idea of this module. I have also implemented basic pytest mock unit test for this project. 
+#### More detailes of each component will be covered below.
 
 
 ##### !!! ***There is a small bug when initial start of streaming. first 4-6 lines of output gets duplicated, I think that is becasue of tmux's startup/intialization process. I think starting tmux session independently and then run command inside it will clean things up*** !!!
@@ -392,7 +393,7 @@ ___
         class_object.boot_before = datetime.strptime("2025-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
         class_object.boot_after  = datetime.strptime("2026-08-13 10:00:00", "%Y-%m-%d %H:%M:%S")
     ```
-    mocking return value of ```reconnect()``` to ```True``` and checking if execution of ```reboot_after_notify()``` method raises and ```RebootNotify exception.
+    mocking return value of ```reconnect()``` to ```True``` and checking if execution of ```reboot_after_notify()``` method raises and ```RebootNotify``` exception.
     ```
         mocker.patch.object(class_object, "reconnect", return_value=True)
 
@@ -401,4 +402,6 @@ ___
     ```
 #
 # WORK IN PROGRESS
+
+
 
