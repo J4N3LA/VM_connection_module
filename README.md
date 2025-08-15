@@ -2,14 +2,14 @@
 ## SSH Script Executor with live output streaming and fail-recovery
 #### This python module lets us execute script on remote host, while streaming the output directly on our terminal.
 #### It uses __'paramiko'__ module for creating SSH tunnel and __'tmux'__ sessions for connection failure recovery. Idea is to first upload script to remote host with sftp, than execute this script inside __'tmux'__ session, As soon as script produces stdout/stderr output we are receiveing it via paramiko'c ssh channels, filtering it from unwanted characters (terminal ANSI codes,newlines, tmux statusbars...) and passing filtered "data" to a callback function, which by itself prints it to our terminal and logs it inside local timestamped log file.
-#### Also main feature is to be able to recover our streaming process, for example when loosing network connection to remote  vm. This is also accomplished with the help of 'tmux' sessions. The initial command that ran our script inside tmux is independent from ssh session, meaning if our ssh channel goes down - script will continue running, and after we reconnect automatically we re-attach to the same 'tmux' session.
+#### Also main feature is to also recover our streaming process, for example when loosing network connection to remote  vm. This is also accomplished with the help of 'tmux' sessions. The initial command that ran our script inside tmux is independent from ssh session, meaning if our ssh channel goes down - script will continue running, and after we reconnect automatically we re-attach to the same 'tmux' session.
 #### This was the core idea of this module,  More detailes of each component will be covered below.
 
 
 ##### !!! ***There is a small bug when initial start of streaming. first 4-6 lines of output gets duplicated, I think that is becasue of tmux's startup/intialization process. I think starting tmux session independently and then run command inside it will clean things up*** !!!
 
 ---
-## Dependencies & requirements
+## Requirements & How to run
 This script was developed inside python __'venv'__ environment. list of required modules was generated using __```pip freeze > requirements.txt```__. You can use this generated file to install all required python modules using __```pip install -r /path/to/requirements.txt```__ command. 
 
 Usually it is recommended to run __```pip install```__ command inside your virtual-environment. Here is a quick guide to set up safe evironment for this script:
@@ -45,7 +45,25 @@ Main component that makes this script work is ```tmux```, so make sure to instal
 sudo dnf install tmux -y       # RHEL/CentOS
 sudo apt install tmux -y       # Ubuntu/Debian
 ```
-
+#
+To run this program you can modify the "main" protion of this module. Inside, configure ```log_filename``` variable to specify where logs should be saved. And create ```SSHConnection``` class object.
+```
+    # Configure where to store log file, under what name.
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    log_filename = f"/tmp/script_exeution_{timestamp}.log"
+```
+```
+    #  Create class object based on your setup. For example:
+    conn = SSHConnection(
+                        host="192.168.0.50",
+                        port=22,
+                        user="vm-connection-test",
+                        key_path="/home/njanelidze/.ssh/id_ed25519",
+                        script_path_local=f"./script.sh",
+                        script_path_remote=f"/tmp/script.sh",
+                        local_log_file=log_filename,
+                        )
+```
 
 ---
 
@@ -72,7 +90,7 @@ sudo apt install tmux -y       # Ubuntu/Debian
                     )
 #
 - ### `is_alive()`
-    ####  Method to check if remote host is alive/sshd service is running. Used by ```connect()``` method. Takes following parameters:
+    ####  Method to check if remote host is alive/VM  is running. Used by ```connect()``` method. Takes following parameters:
      - __retries__ - number of retries before declaring host unreachable
      - __delays__ - delay in seconds between reties
      #### To check if host is alive we use 3 different ways one by one on every retry. At least one of these checks must be ___True___ to return ___True___ from these method otherwise script exits:
@@ -96,7 +114,7 @@ sudo apt install tmux -y       # Ubuntu/Debian
         Could not connect to 192.168.0.50:22. Error: Host 192.168.0.50 on port 22 is unreachable after multiple retries.
 #
 - ### `connect()`
-    #### This method is responsible for creating Paramiko SSH connection to remove host. It uses ```is_alive()``` method at the beggining to check if remote host is active. It only takes ___timeout___ parameter, which is used for Paramikos connection configuration. snippet of ```connect()``` method
+    #### This method is responsible for creating Paramiko SSH connection to remove host. It uses ```is_alive()``` method at the beggining to check if remote host is active. It only takes ___timeout___ parameter, which is used for Paramikos connection configuration. snippet of ```connect()``` method:
     ```
         try:
             self.client = paramiko.SSHClient()
@@ -116,7 +134,7 @@ sudo apt install tmux -y       # Ubuntu/Debian
     ```
 #
 - ### `reconnect()`
-    #### This method is used to for reconnection to remote host. It repeatedly reuses ```connect()``` method. Used inside ```execute_after_reconnect()``` method. Sets ```self.boot_after``` if ```connect``` is successfull which is later used for boot detection logging . Raises ```HostUnreachable``` exception if failed. Takes following parameters:
+    #### This method is used to for reconnection to remote host. It repeatedly reuses ```connect()``` method. Used inside ```execute_after_reconnect()``` method. Sets ```self.boot_after``` if ```connect``` is successfull which is later used for reboot detection logging . Raises ```HostUnreachable``` exception if failed. Takes following parameters:
     - __retries__ - number of retries to execute ```connect()``` method
     - __delays__ - delay period between each retry
     
@@ -130,7 +148,7 @@ sudo apt install tmux -y       # Ubuntu/Debian
     ```
 #
 - ### `upload_script()`
-    #### This method is used to upload script to remote host which will later be executed inside ___tmux___ session. Raises exception if file upload was unsussessfule and exits the program. It uses ___paramiko___'s sftp client to accomplish this goal. Heres a snippet of this method:
+    #### This method is used to upload script to remote host which will later be executed inside ___tmux___ session. Raises exception if file upload was unsussessful and exits the program. It uses ___paramiko___'s sftp client to accomplish this goal. Heres a snippet of this method:
     ```
         def upload_script(self):
         try:
@@ -379,7 +397,6 @@ ___
         with pytest.raises(RebootNotify):
             class_object.execute_after_reconnect(mock_logging, timeout=5, f=None)
     ```
-
 
 
 
