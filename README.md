@@ -37,7 +37,7 @@ ssh-copy-id -i /path/to/generated/key.pub remote_host_user@remote_host_ip
 
 # After this you should be able to directly authenticate to remote host's ssh-agent using
 
-ssh remote_host_user@remote_host_ip
+ssh -i  /path/to/generated/key.pub remote_host_user@remote_host_ip
 
 # If prompted for 'Are you sure you want to continue connecting (yes/no)?' type yes
 ```
@@ -402,6 +402,7 @@ ___
     ```
 #
 # WORK IN PROGRESS
+
 
 
 
