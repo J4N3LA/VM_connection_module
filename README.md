@@ -20,7 +20,7 @@ Usually it is recommended to run __```pip install```__ command inside your virtu
 
 git clone https://github.com/J4N3LA/VM_connection_module.git
 cd VM_connection_module
-python3 -m venv .
+python3 -m venv venv-name .
 source bin/activate
 pip install -r requirements.txt
 ```
@@ -402,6 +402,7 @@ ___
     ```
 #
 # WORK IN PROGRESS
+
 
 
 
