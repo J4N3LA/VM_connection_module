@@ -151,7 +151,8 @@ def test_reboot_notify_exception(mocker, class_object):
 
 
 def test_is_alive_success(mocker, class_object):
-    mocker.patch("subprocess.run", return_value=mocker.Mock(returncode=0)) 
+    # mocker.patch("subprocess.run", return_value=mocker.Mock(returncode=0)) 
+    mocker.patch("subprocess.run", side_effect=[ mocker.Mock(returncode=1),mocker.Mock(returncode=0) ])
     mocker.patch("socket.create_connection")
     mocker.patch("requests.get", return_value=mocker.Mock(status_code=200, json=lambda: {"status": "running"}))
 

@@ -91,17 +91,18 @@ To run this program you can modify the "main" protion of this module. Inside, co
                     )
 #
 - ### `is_alive()`
+    ___!!! this method determines if host is running, it does not always guarantee that connection can be established via SSH !!!___
     ####  Method to check if remote host is alive/VM  is running. Used by ```connect()``` method. Takes following parameters:
      - __retries__ - number of retries before declaring host unreachable
      - __delays__ - delay in seconds between reties
-     #### To check if host is alive we use 3 different ways one by one on every retry. At least one of these checks must be ___True___ to return ___True___ from these method otherwise script exits:
+     #### To check if host is alive we use 4 different ways one by one on every retry. At least one of these checks must be ___True___ to return ___True___ from these method otherwise script exits:
      - __ping__ - Send ICMP packet to remote host to check if it is alive. There is high possibility that ICMP packet will be dropeed therefore return value of ___False___ does not mean host is dead.
      - __socket__ - Checks if it is possible to create TCP connection to remote host. Uses socket module and returns ___True/False___ based on the result.
      - __SSH__ - Tries to create single-use ___ssh___ connection and execute  ___whoami___  command remote host.
 
-     - __Other idea__ - If we use some kind of VM orchestrators (Vsphere,Proxmox...), Best way to check would have been to send request with for example ```requests``` module  towards its API and parse the recived data for VM state .
+     - __API__ - If we use some kind of VM orchestrators (Vsphere,Proxmox...), Best way to check would have been to send request with  ```requests``` module  towards its API and parse the recived data for VM state .
 
-     #### Example output of is_alive(2,5) method:
+     #### Example output of is_alive(2,5) method failure:
         Trying to connect to 192.168.0.50:22...
         Checking if host machine is active...
         Try 1: Checking connections
@@ -113,6 +114,28 @@ To run this program you can modify the "main" protion of this module. Inside, co
             Socket  check status: False
             SSH connection check status: False
         Could not connect to 192.168.0.50:22. Error: Host 192.168.0.50 on port 22 is unreachable after multiple retries.
+    
+
+    #### Example output of is_alive(2,5) method success, here API check fails because I configured it with false URL:
+    ```
+    Trying to connect to 127.0.0.1:22...
+    Checking if host machine is active...
+    Try 1: Checking connections
+        Ping check status: True
+        Socket  check status: True
+        SSH  check status: True
+        API  check status: False - Error: HTTPSConnectionPool(host='api.vmorchestrator', port=443): Max retries exceeded with url: /vms/127.0.0.1/status (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f6c89dfda90>: Failed to resolve 'api.vmorchestrator' ([Errno -2] Name or service not known)"))
+    Host 127.0.0.1 on port 22 is active.
+    Connection successfull.
+    Script: /home/njanelidze/Documents/Python/VM_connection_module/script.sh uploaded to 127.0.0.1:/tmp/script.sh
+    File open for loggin...
+    Starting process as Tmux session...
+    [REMOTE] >> hello 1
+    [REMOTE] >> hello 2
+    [REMOTE] >> hello 3
+    [REMOTE] >> hello 4
+    ```
+
 #
 - ### `connect()`
     #### This method is responsible for creating Paramiko SSH connection to remove host. It uses ```is_alive()``` method at the beggining to check if remote host is active. It only takes ___timeout___ parameter, which is used for Paramikos connection configuration. snippet of ```connect()``` method:
@@ -400,6 +423,30 @@ ___
         with pytest.raises(RebootNotify):
             class_object.execute_after_reconnect(mock_logging, timeout=5, f=None)
     ```
+
+- ### Test is_alive() method success and failure - test_is_alive_success/failure()
+    In success test we are checking ```is_alive()``` method's success if 1/4 checks fails (ping):
+    ```
+    # Mocking ping check failure and other checks' success
+
+    mocker.patch("subprocess.run", side_effect=[ mocker.Mock(returncode=1),mocker.Mock(returncode=0) ])
+    mocker.patch("socket.create_connection")
+    mocker.patch("requests.get", return_value=mocker.Mock(status_code=200, json=lambda: {"status": "running"}))
+
+    # then we assert is_alive() method's return value
+
+    assert class_object.is_alive(retries=1, delay=0) == True
+    ```
+    Inside failure test we are checking if making all checks fail will cause an exception to raise:
+    ```
+    mocker.patch("subprocess.run", return_value=mocker.Mock(returncode=1)) 
+    mocker.patch("socket.create_connection", side_effect=Exception("socket=False"))
+    mocker.patch("requests.get", side_effect=requests.exceptions.RequestException("api=Fale"))
+
+    with pytest.raises(HostUnreachable):
+        class_object.is_alive(retries=1, delay=0)
+    ```
+
 #
 # WORK IN PROGRESS
 
