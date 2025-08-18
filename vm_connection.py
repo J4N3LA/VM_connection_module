@@ -5,6 +5,7 @@ from datetime import datetime
 import time
 import re
 import sys
+import requests
 
 
 class RebootNotify(Exception):
@@ -83,8 +84,9 @@ class SSHConnection:
             ping_check = False
             socket_check = False
             ssh_check = False
+            api_check = False
             print(f"Try {i}: Checking connections")
-
+            
             if subprocess.run(["ping", "-c", "3", self.host],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL).returncode == 0:
@@ -96,9 +98,8 @@ class SSHConnection:
                 with socket.create_connection((self.host,self.port),timeout=3):
                     socket_check = True
                     print(f"    Socket  check status: {socket_check}")
-            except Exception:
-                    print(f"    Socket  check status: {socket_check}")
-                    socket_check = False
+            except Exception as e:
+                    print(f"    Socket  check status: {socket_check} - Error: {e}")
 
             if subprocess.run(["ssh", "-o", "BatchMode=yes","-i", self.key_path,"-o", "ConnectTimeout=10", f"{self.user}@{self.host}", "-p", str(self.port), "whoami"],
                                 stdout=subprocess.DEVNULL,
@@ -107,9 +108,16 @@ class SSHConnection:
                 print(f"    SSH  check status: {ssh_check}")
             else: print(f"    SSH  check status: {ssh_check}")
 
-            
+            try:
+                response = requests.get(f"https://api.vmorchestrator/vms/{self.host}/status", timeout=5)
+                if response.status_code == 200 and response.json().get("status") == "running":
+                    api_check = True
+                    print(f"    API  check status: {api_check}")
+            except requests.exceptions.RequestException as e:
+            # except Exception as e:
+                    print(f"    API  check status: {api_check} - Error: {e}")            
 
-            if ping_check or socket_check or ssh_check: 
+            if ping_check or socket_check or ssh_check or api_check: 
                 print(f"Host {self.host} on port {self.port} is active.")
                 return True
             else: 
