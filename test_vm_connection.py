@@ -1,6 +1,8 @@
 import pytest
 from vm_connection import SSHConnection, HostUnreachable, RebootNotify
 from datetime import datetime
+import requests
+
 @pytest.fixture
 def class_object():
     return SSHConnection(
@@ -146,3 +148,19 @@ def test_reboot_notify_exception(mocker, class_object):
 
     with pytest.raises(RebootNotify):
         class_object.execute_after_reconnect(mock_logging, timeout=5, f=None)
+
+
+def test_is_alive_success(mocker, class_object):
+    mocker.patch("subprocess.run", return_value=mocker.Mock(returncode=0)) 
+    mocker.patch("socket.create_connection")
+    mocker.patch("requests.get", return_value=mocker.Mock(status_code=200, json=lambda: {"status": "running"}))
+
+    assert class_object.is_alive(retries=1, delay=0) == True
+
+def test_is_alive_failure(mocker, class_object):
+    mocker.patch("subprocess.run", return_value=mocker.Mock(returncode=1)) 
+    mocker.patch("socket.create_connection", side_effect=Exception("socket=False"))
+    mocker.patch("requests.get", side_effect=requests.exceptions.RequestException("api=Fale"))
+
+    with pytest.raises(HostUnreachable):
+        class_object.is_alive(retries=1, delay=0)
