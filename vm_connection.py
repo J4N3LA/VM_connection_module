@@ -269,8 +269,8 @@ if __name__ == "__main__":
 
 
     conn = SSHConnection(
-                        # host="192.168.0.50",
-                        host="127.0.0.1",
+                        host="192.168.0.50",
+                        # host="127.0.0.1",
                         port=22,
                         # user="devops",
                         user="vm-connection-test",
@@ -288,7 +288,7 @@ if __name__ == "__main__":
         except RebootNotify as e:
             print(f"ALERT: {e}\nPlease rerun the program")
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"Error: {e}")
         finally:
             conn.close()
 

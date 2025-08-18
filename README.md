@@ -103,18 +103,23 @@ To run this program you can modify the "main" protion of this module. Inside, co
      - __API__ - If we use some kind of VM orchestrators (Vsphere,Proxmox...), Best way to check would have been to send request with  ```requests``` module  towards its API and parse the recived data for VM state .
 
      #### Example output of is_alive(2,5) method failure:
-        Trying to connect to 192.168.0.50:22...
-        Checking if host machine is active...
-        Try 1: Checking connections
-            Ping check status: False
-            Socket  check status: False
-            SSH connection check status: False
-        Try 2: Checking connections
-            Ping check status: False
-            Socket  check status: False
-            SSH connection check status: False
-        Could not connect to 192.168.0.50:22. Error: Host 192.168.0.50 on port 22 is unreachable after multiple retries.
-    
+     ```
+    Trying to connect to 192.168.0.50:22...
+    Checking if host machine is active...
+    Try 1: Checking connections
+        Ping check status: False
+        Socket  check status: False - Error: timed out
+        SSH  check status: False
+        API  check status: False - Error: HTTPSConnectionPool(host='api.vmorchestrator', port=443): Max retries exceeded with url: /vms/192.168.0.50/status (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f8edba9da90>: Failed to resolve 'api.vmorchestrator' ([Errno -2] Name or service not known)"))
+    Try 2: Checking connections
+        Ping check status: False
+        Socket  check status: False - Error: timed out
+        SSH  check status: False
+        API  check status: False - Error: HTTPSConnectionPool(host='api.vmorchestrator', port=443): Max retries exceeded with url: /vms/192.168.0.50/status (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x7f8edba034d0>: Failed to resolve 'api.vmorchestrator' ([Errno -2] Name or service not known)"))
+    Could not connect to 192.168.0.50:22. Error: Host 192.168.0.50 on port 22 is unreachable after multiple retries.
+    Error: Could not connect to host:
+    Error: [Errno None] Unable to connect to port 22 on 192.168.0.50
+    ```    
 
     #### Example output of is_alive(2,5) method success, here API check fails because I configured it with false URL:
     ```
